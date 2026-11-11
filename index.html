@@ -1,0 +1,357 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>EPS 多因子選股</title>
+<style>
+:root{--bg:#f6f7f9;--card:#fff;--fg:#1d2330;--mut:#667085;--line:#e3e6eb;--acc:#2b6cb0;--accbg:#e8f0fa;--ok:#2f855a;--bad:#c53030;--g0:#fde8e8;--g1:#e6f4ea}
+@media (prefers-color-scheme:dark){:root{--bg:#14171c;--card:#1d2128;--fg:#e6e8ec;--mut:#98a2b3;--line:#2e333c;--acc:#6ea8e8;--accbg:#22314a;--ok:#68d391;--bad:#fc8181;--g0:#3b2224;--g1:#1f3527}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);font:14px/1.5 -apple-system,"PingFang TC","Noto Sans TC","Microsoft JhengHei",sans-serif}
+.wrap{max-width:1280px;margin:0 auto;padding:20px 16px 60px}
+h1{font-size:22px;margin:0 0 4px}
+.sub{color:var(--mut);margin-bottom:16px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:16px;margin-bottom:16px}
+.card h2{font-size:16px;margin:0 0 12px;display:flex;align-items:center;gap:8px}
+.step{display:inline-grid;place-items:center;width:22px;height:22px;border-radius:50%;background:var(--acc);color:#fff;font-size:12px}
+.row{display:flex;flex-wrap:wrap;gap:12px 20px;align-items:center}
+label{display:inline-flex;align-items:center;gap:6px}
+input[type=number],select{background:var(--bg);color:var(--fg);border:1px solid var(--line);border-radius:6px;padding:4px 6px;font:inherit}
+input[type=number]{width:80px}
+input.s{width:42px;text-align:center;padding:3px 2px}
+button{font:inherit;border:1px solid var(--line);background:var(--bg);color:var(--fg);border-radius:6px;padding:5px 12px;cursor:pointer}
+button.pri{background:var(--acc);border-color:var(--acc);color:#fff;font-weight:600;padding:8px 22px}
+button:hover{filter:brightness(.96)}
+.hint{color:var(--mut);font-size:12px}
+.pill{display:inline-block;padding:2px 10px;border-radius:999px;background:var(--accbg);color:var(--acc);font-weight:600}
+.tbl{overflow-x:auto}
+table{border-collapse:collapse;width:100%;white-space:nowrap}
+th,td{padding:6px 8px;border-bottom:1px solid var(--line);text-align:right}
+th{font-weight:600;color:var(--mut);font-size:12px;position:sticky;top:0;background:var(--card)}
+td.l,th.l{text-align:left}
+tr.off td{opacity:.45}
+.sum{font-weight:700}
+.sum.ok{color:var(--ok)}.sum.bad{color:var(--bad)}
+.bp{font-size:11px;color:var(--mut);white-space:normal;text-align:left;max-width:900px}
+.gs{display:inline-block;min-width:18px;font-size:11px;color:var(--mut)}
+#res td.score{font-weight:700;color:var(--acc)}
+.cell small{color:var(--mut);margin-left:4px}
+details summary{cursor:pointer;color:var(--acc)}
+.indgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:4px 12px}
+.cmp{display:block;font-size:11px;line-height:1.3}
+.up{color:var(--bad)}.dn{color:var(--ok)}
+#res tr.main{cursor:pointer}
+#res tr.main:hover td{background:var(--accbg)}
+#res tr.det>td{background:var(--bg);text-align:left;padding:10px 14px}
+#res tr.det table{width:auto}
+#res tr.det th{background:var(--bg)}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>EPS 多因子選股</h1>
+  <div class="sub" id="meta">載入中…</div>
+
+  <div class="card">
+    <h2><span class="step">1</span>EPS 篩選（主篩選器）</h2>
+    <div class="row">
+      <label>近四季 EPS 合計 ≥ <input type="number" id="fTtm" step="0.1" value="0"></label>
+      <label>最新單季 EPS ≥ <input type="number" id="fLq" step="0.1" value="0"></label>
+      <label>最近 <input type="number" id="fPosN" min="0" max="8" value="4" style="width:50px"> 季單季 EPS 皆 &gt; 0</label>
+      <label><input type="checkbox" id="fYoy"> 最新單季 EPS 年增（較去年同季成長）</label>
+      <label><input type="checkbox" id="fTrade" checked> 排除當日無成交</label>
+    </div>
+    <details style="margin-top:10px" id="indBox">
+      <summary>產業篩選：<span id="indSel">全部產業</span></summary>
+      <div class="row" style="margin:8px 0;gap:6px"><button id="indAll">全選</button><button id="indNone">全不選</button><span class="hint">不勾任何產業 = 不限產業</span></div>
+      <div id="indList" class="indgrid"></div>
+    </details>
+    <div class="row" style="margin-top:10px">
+      <span>通過篩選：<span class="pill" id="passN">-</span> 檔</span>
+      <span class="hint">「近四季」以各公司已公布的最新一季往回加總；缺季資料者不通過。</span>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2><span class="step">2</span>分組期間</h2>
+    <div class="row">
+      <label>用最近 <input type="number" id="lookback" min="1" value="60"> 個交易日的資料切成 10 組</label>
+      <span class="row" style="gap:6px" id="lbBtns"></span>
+      <span class="hint" id="lbRange"></span>
+    </div>
+    <div class="hint" style="margin-top:8px">每個因子把「期間內每天、全市場所有股票」的數值合在一起，取 10%、20%…90% 分位數當作 10 組的切點，再看最新一天每檔股票落在第幾組。第 1 組 = 數值最低，第 10 組 = 數值最高。</div>
+  </div>
+
+  <div class="card">
+    <h2><span class="step">3</span>因子、權重與分數規則</h2>
+    <div class="row" style="margin-bottom:10px">
+      <span>權重合計：<span class="sum" id="wSum">0</span></span>
+      <button id="btnEq">勾選的平均分配</button>
+      <button id="btnNorm">按比例調整成 1</button>
+      <label><input type="checkbox" id="showBp"> 顯示各組切點</label>
+      <span class="hint">分數欄：第 1 組（數值最低）→ 第 10 組（數值最高）各給幾分，可直接修改。缺值的股票該因子得 0 分。</span>
+    </div>
+    <div class="tbl"><table id="ftbl"></table></div>
+  </div>
+
+  <div class="card">
+    <h2><span class="step">4</span>計算排名</h2>
+    <div class="row">
+      <label>取前 <input type="number" id="topK" min="1" value="10" style="width:60px"> 名</label>
+      <button class="pri" id="btnRun">計算分數</button>
+      <button id="btnCsv">匯出 CSV</button>
+      <button id="btnReset">重設所有設定</button>
+      <span class="hint" id="runMsg"></span>
+    </div>
+    <div class="row" style="margin-top:10px">
+      <label>產業比較：<select id="cmpMode">
+        <option value="off">不顯示</option>
+        <option value="both" selected>vs 產業平均 與 中位數</option>
+        <option value="mean">只看 vs 產業平均</option>
+        <option value="median">只看 vs 產業中位數</option></select></label>
+      <label>比較母體：<select id="cmpPool">
+        <option value="all">同產業全部股票</option>
+        <option value="pass">同產業且通過 EPS 篩選</option></select></label>
+    </div>
+    <div class="hint" style="margin-top:6px">總分 = Σ（權重 × 該因子分數）。每格顯示「原始值（組別·分數）」；產業比較中，單位為 % 的因子（報酬、波動、融資維持率）顯示差幾個百分點（pp），其餘顯示高／低幾 %。點任一列可展開該股全部因子與產業的比較。</div>
+    <div class="tbl" style="margin-top:12px"><table id="res"></table></div>
+  </div>
+</div>
+
+<script src="data.js"></script>
+<script>
+const D = window.DATA;
+const FACT = [
+  {k:'pe',       n:'本益比',        u:'倍',   d:2, dir:'desc', note:'最新收盤價 ÷ 近四季 EPS（EPS≤0 為缺值）'},
+  {k:'ret1',     n:'當天報酬率',    u:'%',    d:2, dir:'asc'},
+  {k:'ret3',     n:'近3日累積報酬', u:'%',    d:2, dir:'asc'},
+  {k:'ret5',     n:'近5日累積報酬', u:'%',    d:2, dir:'asc'},
+  {k:'vol5',     n:'近5日波動率',   u:'%',    d:2, dir:'desc', note:'近5日日報酬率的標準差'},
+  {k:'amount',   n:'成交金額',      u:'千元', d:0, dir:'asc'},
+  {k:'volume',   n:'成交量',        u:'千股', d:0, dir:'asc'},
+  {k:'overnight',n:'隔夜報酬',      u:'%',    d:2, dir:'asc', note:'今日開盤 ÷ 前一交易日收盤 − 1'},
+  {k:'sbl',      n:'借券賣出餘額',  u:'千元', d:0, dir:'desc'},
+  {k:'margin',   n:'融資維持率',    u:'%',    d:2, dir:'asc'},
+  {k:'mktcap',   n:'市值',          u:'百萬', d:0, dir:'asc'},
+];
+const IND = {'01':'水泥','02':'食品','03':'塑膠','04':'紡織纖維','05':'電機機械','06':'電器電纜','08':'玻璃陶瓷','09':'造紙','10':'鋼鐵','11':'橡膠','12':'汽車','14':'建材營造','15':'航運','16':'觀光餐旅','17':'金融保險','18':'貿易百貨','20':'其他','21':'化學','22':'生技醫療','23':'油電燃氣','24':'半導體','25':'電腦及週邊設備','26':'光電','27':'通信網路','28':'電子零組件','29':'電子通路','30':'資訊服務','31':'其他電子','32':'文化創意','33':'農業科技','34':'電子商務','35':'綠能環保','36':'數位雲端','37':'運動休閒','38':'居家生活','80':'管理股票','91':'存託憑證'};
+const indName = c => IND[c] || (c ? '產業'+c : '未分類');
+const ASC = [1,2,3,4,5,6,7,8,9,10], DESC = ASC.slice().reverse();
+const $ = id => document.getElementById(id);
+const fmt = (v,d) => v==null ? '—' : Number(v).toLocaleString('zh-TW',{minimumFractionDigits:d,maximumFractionDigits:d});
+const fmtD = s => `${s.slice(0,4)}/${s.slice(4,6)}/${s.slice(6)}`;
+
+// ---------- 設定 ----------
+function defaults(){
+  return {
+    fTtm:0, fLq:0, fPosN:4, fYoy:false, fTrade:true, lookback:60, topK:10,
+    inds:[], cmpMode:'both', cmpPool:'all',
+    f: Object.fromEntries(FACT.map(f=>[f.k,{on:false,w:0,mode:f.dir,s:(f.dir==='asc'?ASC:DESC).slice()}]))
+  };
+}
+let S = defaults();
+try{ const saved = JSON.parse(localStorage.getItem('epsScreener')||'null'); if(saved){ S = Object.assign(defaults(), saved); for(const f of FACT) S.f[f.k] = Object.assign(defaults().f[f.k], saved.f?.[f.k]); } }catch(e){}
+const save = () => { try{ localStorage.setItem('epsScreener', JSON.stringify(S)); }catch(e){} };
+
+// ---------- 分組切點（合併最近 N 日的分位點，加權取 10 等分） ----------
+const bpCache = {};
+function breakpoints(k, n){
+  const key = k+'|'+n; if(bpCache[key]) return bpCache[key];
+  const H = D.hist[k], C = D.counts[k], L = H.length, pts = [];
+  for(let i=Math.max(0,L-n); i<L; i++){
+    const h = H[i]; if(!h.length) continue;
+    const w = C[i]/h.length;
+    for(const v of h) pts.push([v,w]);
+  }
+  pts.sort((a,b)=>a[0]-b[0]);
+  const tot = pts.reduce((s,p)=>s+p[1],0), bp = [];
+  let cum = 0, j = 0;
+  for(let q=1;q<=9;q++){
+    const target = tot*q/10;
+    while(j<pts.length-1 && cum+pts[j][1] < target){ cum += pts[j][1]; j++; }
+    bp.push(pts[j][0]);
+  }
+  return bpCache[key] = bp;
+}
+const groupOf = (v,bp) => { if(v==null) return null; let g=1; for(const b of bp) if(v>b) g++; return g; };
+
+// ---------- EPS 篩選 ----------
+function prevQ(q){ let y=+q.slice(0,4), m=+q.slice(4)-3; if(m===0){y--;m=12;} return `${y}${String(m).padStart(2,'0')}`; }
+function passEPS(s){
+  if(S.inds.length && !S.inds.includes(s.ind)) return false;
+  if(S.fTrade && !(s.volume>0)) return false;
+  if(s.ttm==null || s.ttm < S.fTtm) return false;
+  const e = Object.fromEntries(s.eps);
+  if(!s.lq || e[s.lq]==null || e[s.lq] < S.fLq) return false;
+  let q = s.lq;
+  for(let i=0;i<S.fPosN;i++){ if(!(e[q]>0)) return false; q = prevQ(q); }
+  if(S.fYoy){ let ly=s.lq; for(let i=0;i<4;i++) ly=prevQ(ly); if(e[ly]==null || !(e[s.lq] > e[ly])) return false; }
+  return true;
+}
+
+// ---------- 產業統計（最新一日，同產業平均與中位數） ----------
+function indStats(pool){
+  const by = {};
+  for(const s of pool){
+    const g = by[s.ind] ||= {n:0, v:Object.fromEntries(FACT.map(f=>[f.k,[]]))};
+    g.n++;
+    for(const f of FACT) if(s[f.k]!=null) g.v[f.k].push(s[f.k]);
+  }
+  const out = {};
+  for(const [ind,g] of Object.entries(by)){
+    out[ind] = {n:g.n};
+    for(const f of FACT){
+      const a = g.v[f.k].sort((x,y)=>x-y), n = a.length;
+      out[ind][f.k] = n ? {mean:a.reduce((x,y)=>x+y,0)/n, median: n%2 ? a[(n-1)/2] : (a[n/2-1]+a[n/2])/2, n} : null;
+    }
+  }
+  return out;
+}
+// 單位為 % 的因子用百分點差；其他用相對 %
+function diffTxt(f, v, ref){
+  if(v==null || ref==null) return '—';
+  let d, txt;
+  if(f.u==='%'){ d = v-ref; txt = Math.abs(d).toFixed(2)+'pp'; }
+  else { if(ref===0) return v===0?'持平':'—'; d = (v-ref)/Math.abs(ref)*100; txt = (Math.abs(d)>=1000?Math.abs(d).toFixed(0):Math.abs(d).toFixed(1))+'%'; }
+  if(d===0) return '持平';
+  return `<span class="${d>0?'up':'dn'}">${d>0?'高 ':'低 '}${txt}</span>`;
+}
+function cmpLine(f, s, st){
+  if(S.cmpMode==='off' || !st || !st[f.k]) return '';
+  const p = [];
+  if(S.cmpMode!=='median') p.push('均 '+diffTxt(f, s[f.k], st[f.k].mean));
+  if(S.cmpMode!=='mean') p.push('中 '+diffTxt(f, s[f.k], st[f.k].median));
+  return `<span class="cmp">${p.join('　')}</span>`;
+}
+function detailHTML(s, st){
+  let h = `<b>${s.code} ${s.name}</b>　${indName(s.ind)}（產業比較母體 ${st?.n||0} 檔）<table style="margin-top:6px"><tr><th class="l">因子</th><th>本股</th><th>產業平均</th><th>vs 平均</th><th>產業中位數</th><th>vs 中位數</th><th>產業有值檔數</th></tr>`;
+  for(const f of FACT){
+    const x = st?.[f.k];
+    h += `<tr><td class="l">${f.n} <span class="hint">${f.u}</span></td><td>${fmt(s[f.k],f.d)}</td><td>${fmt(x?.mean,f.d)}</td><td>${diffTxt(f,s[f.k],x?.mean)}</td><td>${fmt(x?.median,f.d)}</td><td>${diffTxt(f,s[f.k],x?.median)}</td><td>${x?.n??0}</td></tr>`;
+  }
+  return h + '</table>';
+}
+
+// ---------- 產業篩選 UI ----------
+function renderInds(){
+  const cnt = {}; for(const s of D.stocks) cnt[s.ind] = (cnt[s.ind]||0)+1;
+  const codes = Object.keys(cnt).sort();
+  $('indList').innerHTML = codes.map(c=>`<label><input type="checkbox" value="${c}" ${S.inds.includes(c)?'checked':''}> ${indName(c)} <span class="hint">${cnt[c]}</span></label>`).join('');
+  $('indSel').textContent = S.inds.length ? S.inds.map(indName).join('、') : '全部產業';
+}
+$('indList').onchange = ()=>{ S.inds = [...$('indList').querySelectorAll('input:checked')].map(x=>x.value); save(); renderInds(); updatePass(); };
+$('indAll').onclick = ()=>{ S.inds = [...new Set(D.stocks.map(s=>s.ind))]; save(); renderInds(); updatePass(); };
+$('indNone').onclick = ()=>{ S.inds = []; save(); renderInds(); updatePass(); };
+
+// ---------- UI ----------
+function renderFactorTable(){
+  const showBp = $('showBp').checked, n = S.lookback;
+  let h = `<tr><th class="l">使用</th><th class="l">因子</th><th>權重</th><th class="l">分數規則</th>${ASC.map(g=>`<th>G${g}</th>`).join('')}</tr>`;
+  for(const f of FACT){
+    const c = S.f[f.k];
+    h += `<tr class="${c.on?'':'off'}" data-k="${f.k}">
+      <td class="l"><input type="checkbox" class="on" ${c.on?'checked':''}></td>
+      <td class="l"><b>${f.n}</b> <span class="hint">${f.u}</span>${f.note?`<div class="hint">${f.note}</div>`:''}</td>
+      <td><input type="number" class="w" step="0.05" min="0" max="1" value="${c.w}"></td>
+      <td class="l"><select class="mode">
+        <option value="asc" ${c.mode==='asc'?'selected':''}>升冪：數值越高分數越高</option>
+        <option value="desc" ${c.mode==='desc'?'selected':''}>降冪：數值越低分數越高</option>
+        <option value="custom" ${c.mode==='custom'?'selected':''}>自訂分數</option></select></td>
+      ${c.s.map((v,i)=>`<td><input type="number" class="s" data-i="${i}" value="${v}"></td>`).join('')}
+    </tr>`;
+    if(showBp){
+      const bp = breakpoints(f.k, n);
+      h += `<tr class="${c.on?'':'off'}"><td></td><td colspan="${4+10}" class="bp">切點：${bp.map((b,i)=>`G${i+1}|G${i+2} = ${fmt(b,f.d)}`).join('　')}</td></tr>`;
+    }
+  }
+  $('ftbl').innerHTML = h;
+  updateSum();
+}
+function updateSum(){
+  const s = FACT.reduce((a,f)=>a+(S.f[f.k].on?(+S.f[f.k].w||0):0),0);
+  const el = $('wSum'); el.textContent = s.toFixed(4).replace(/\.?0+$/,'') || '0';
+  el.className = 'sum ' + (Math.abs(s-1)<1e-6 ? 'ok' : 'bad');
+  return s;
+}
+$('ftbl').addEventListener('input', e=>{
+  const tr = e.target.closest('tr[data-k]'); if(!tr) return;
+  const c = S.f[tr.dataset.k], t = e.target;
+  if(t.classList.contains('on')){ c.on = t.checked; tr.classList.toggle('off',!c.on); }
+  else if(t.classList.contains('w')) c.w = +t.value||0;
+  else if(t.classList.contains('mode')){ if(t.value!=='custom') c.s = (t.value==='asc'?ASC:DESC).slice(); c.mode=t.value; save(); return renderFactorTable(); }
+  else if(t.classList.contains('s')){ c.s[+t.dataset.i] = +t.value||0; c.mode='custom'; tr.querySelector('.mode').value='custom'; }
+  save(); updateSum();
+});
+$('btnEq').onclick = ()=>{ const on = FACT.filter(f=>S.f[f.k].on); on.forEach((f,i)=>S.f[f.k].w = +(1/on.length).toFixed(4)); if(on.length){ const r = 1 - on.reduce((a,f)=>a+S.f[f.k].w,0); S.f[on[0].k].w = +(S.f[on[0].k].w + r).toFixed(4);} save(); renderFactorTable(); };
+$('btnNorm').onclick = ()=>{ const s = updateSum(); if(s<=0) return; for(const f of FACT) if(S.f[f.k].on) S.f[f.k].w = +(S.f[f.k].w/s).toFixed(4); save(); renderFactorTable(); };
+$('showBp').onchange = renderFactorTable;
+
+function bindInputs(){
+  for(const id of ['fTtm','fLq','fPosN','lookback','topK']){
+    $(id).value = S[id];
+    $(id).addEventListener('input', ()=>{ S[id] = +$(id).value||0; if(id==='lookback'){ clampLb(); renderFactorTable(); } save(); updatePass(); });
+  }
+  for(const id of ['fYoy','fTrade']){ $(id).checked = S[id]; $(id).onchange = ()=>{ S[id] = $(id).checked; save(); updatePass(); }; }
+}
+function clampLb(){
+  const max = D.dates.length; let n = Math.round(S.lookback)||1; n = Math.max(1,Math.min(max,n)); S.lookback = n;
+  $('lbRange').textContent = `區間：${fmtD(D.dates[max-n])} ~ ${fmtD(D.dates[max-1])}（最多 ${max} 日）`;
+}
+function updatePass(){ $('passN').textContent = D.stocks.filter(passEPS).length; }
+
+function run(){
+  const used = FACT.filter(f=>S.f[f.k].on && (+S.f[f.k].w)>0);
+  const sum = updateSum();
+  if(!used.length){ $('runMsg').textContent = '請至少勾選一個因子並給權重'; return; }
+  if(Math.abs(sum-1)>1e-6){ $('runMsg').textContent = `權重合計為 ${sum.toFixed(4)}，需等於 1（可按「按比例調整成 1」）`; return; }
+  const bps = Object.fromEntries(used.map(f=>[f.k, breakpoints(f.k, S.lookback)]));
+  const pool = D.stocks.filter(passEPS);
+  const rows = pool.map(s=>{
+    let total = 0; const det = {};
+    for(const f of used){
+      const g = groupOf(s[f.k], bps[f.k]);
+      const sc = g==null ? 0 : S.f[f.k].s[g-1];
+      total += S.f[f.k].w * sc; det[f.k] = {g, sc};
+    }
+    return {s, total, det};
+  }).sort((a,b)=>b.total-a.total || (b.s.amount||0)-(a.s.amount||0));
+  const K = Math.max(1, S.topK|0), top = rows.slice(0,K);
+  const st = indStats(S.cmpPool==='pass' ? pool : D.stocks);
+  window._last = {used, top, st};
+  const ncol = 7 + used.length;
+  let h = `<tr><th>名次</th><th class="l">代號</th><th class="l">名稱</th><th class="l">產業</th><th>總分</th><th>收盤</th><th>近四季EPS</th>${used.map(f=>`<th>${f.n}<br><span class="hint">權重 ${S.f[f.k].w}</span></th>`).join('')}</tr>`;
+  top.forEach((r,i)=>{
+    const sti = st[r.s.ind];
+    h += `<tr class="main" data-i="${i}"><td>${i+1}</td><td class="l">${r.s.code}</td><td class="l">${r.s.name}</td><td class="l">${indName(r.s.ind)}</td><td class="score">${r.total.toFixed(3)}</td><td>${fmt(r.s.close,2)}</td><td>${fmt(r.s.ttm,2)}</td>
+      ${used.map(f=>{ const d=r.det[f.k]; return `<td class="cell">${fmt(r.s[f.k],f.d)}<small>${d.g?`G${d.g}·${d.sc}分`:'缺值'}</small>${cmpLine(f,r.s,sti)}</td>`; }).join('')}</tr>
+      <tr class="det" id="det${i}" hidden><td colspan="${ncol}">${detailHTML(r.s, sti)}</td></tr>`;
+  });
+  $('res').innerHTML = h;
+  $('runMsg').textContent = `EPS 篩選後 ${pool.length} 檔參與排名，分組期間 ${S.lookback} 日`;
+}
+$('btnRun').onclick = run;
+$('res').onclick = e=>{ const tr = e.target.closest('tr.main'); if(tr){ const d = $('det'+tr.dataset.i); d.hidden = !d.hidden; } };
+for(const id of ['cmpMode','cmpPool']) $(id).onchange = ()=>{ S[id] = $(id).value; save(); if(window._last) run(); };
+$('btnCsv').onclick = ()=>{
+  if(!window._last) run(); if(!window._last) return;
+  const {used, top, st} = window._last;
+  const head = ['名次','代號','名稱','產業','總分','收盤','近四季EPS',...used.flatMap(f=>[f.n,f.n+'組別',f.n+'分數',f.n+'產業平均',f.n+'產業中位數'])];
+  const lines = [head, ...top.map((r,i)=>[i+1,r.s.code,r.s.name,indName(r.s.ind),r.total.toFixed(4),r.s.close,r.s.ttm,...used.flatMap(f=>{ const x=st[r.s.ind]?.[f.k]; return [r.s[f.k]??'',r.det[f.k].g??'',r.det[f.k].sc,x?+x.mean.toFixed(4):'',x?+x.median.toFixed(4):'']; })])];
+  const csv = '﻿' + lines.map(l=>l.map(x=>`"${String(x).replace(/"/g,'""')}"`).join(',')).join('\n');
+  const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([csv],{type:'text/csv'})); a.download = `選股結果_${D.latestDate}.csv`; a.click();
+};
+$('btnReset').onclick = ()=>{ if(!confirm('確定重設所有設定？')) return; S = defaults(); save(); bindInputs(); clampLb(); renderInds(); $('cmpMode').value = S.cmpMode; $('cmpPool').value = S.cmpPool; renderFactorTable(); updatePass(); $('res').innerHTML=''; };
+
+// 初始化
+if(!D){ $('meta').textContent = '找不到 data.js，請先執行 python3 build_data.py'; }
+else{
+  $('meta').textContent = `資料日期 ${fmtD(D.latestDate)}　·　共 ${D.stocks.length} 檔　·　財報季別 ${D.quarters[0]}~${D.quarters.at(-1)}`;
+  $('lbBtns').innerHTML = [1,5,20,60,120,250].filter(n=>n<=D.dates.length).map(n=>`<button data-n="${n}">${n}日</button>`).join('');
+  $('lbBtns').onclick = e=>{ const n = e.target.dataset?.n; if(!n) return; S.lookback = +n; $('lookback').value = n; clampLb(); save(); renderFactorTable(); };
+  $('cmpMode').value = S.cmpMode; $('cmpPool').value = S.cmpPool;
+  bindInputs(); clampLb(); renderInds(); renderFactorTable(); updatePass();
+}
+</script>
+</body>
+</html>
